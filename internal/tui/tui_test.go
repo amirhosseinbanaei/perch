@@ -12,9 +12,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/agents"
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/snapshot"
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/tmux"
+	"github.com/amirhosseinbanaei/perch/internal/agents"
+	"github.com/amirhosseinbanaei/perch/internal/snapshot"
+	"github.com/amirhosseinbanaei/perch/internal/tmux"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden files")
@@ -58,7 +58,7 @@ func fixedSnapshot() *snapshot.Snapshot {
 
 func testModel(w, h int, ascii bool) Model {
 	m := New(Options{
-		Collector: snapshot.New(tmux.Runner{Socket: "tmm-test-unused"}, snapshot.Options{}),
+		Collector: snapshot.New(tmux.Runner{Socket: "perch-test-unused"}, snapshot.Options{}),
 		Theme:     Theme{ASCII: ascii},
 		Home:      "/home/u",
 		Now:       func() time.Time { return t0 },

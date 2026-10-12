@@ -8,8 +8,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/agents"
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/snapshot"
+	"github.com/amirhosseinbanaei/perch/internal/agents"
+	"github.com/amirhosseinbanaei/perch/internal/snapshot"
 )
 
 // Layout thresholds.
@@ -26,7 +26,7 @@ func (m Model) View() tea.View {
 	v := tea.NewView(m.Render())
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
-	v.WindowTitle = "tmux-manager"
+	v.WindowTitle = "perch"
 	return v
 }
 
@@ -136,7 +136,7 @@ func fit(lines []string, n int) []string {
 
 func (m Model) header(w int) string {
 	if m.snap == nil {
-		return m.theme.Bold("tmux-manager") + " " + m.theme.Dim("loading"+m.theme.Ellipsis())
+		return m.theme.Bold("perch") + " " + m.theme.Dim("loading"+m.theme.Ellipsis())
 	}
 	ags := m.snap.Agents()
 	waiting := 0
@@ -155,9 +155,8 @@ func (m Model) header(w int) string {
 	if m.filter != "" {
 		parts = append(parts, "/"+m.filter)
 	}
-	name := "tmux-manager"
+	name := "perch"
 	if w < narrowWidth {
-		name = "tmm"
 		parts[0] = fmt.Sprintf("%d sess", len(m.snap.Sessions))
 	}
 	left := m.theme.Bold(name) + " " + strings.Join(parts, " · ")

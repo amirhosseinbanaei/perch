@@ -1,6 +1,6 @@
 // Package snapshot is the one model the TUI and the CLI read. A snapshot is two tmux calls
 // (list-sessions and list-panes -a, however many sessions exist), one ps run, and one visible
-// screen capture per agent pane, run concurrently. `tmux-manager ls --json` prints the same
+// screen capture per agent pane, run concurrently. `perch ls --json` prints the same
 // Snapshot struct the TUI draws.
 //
 // The Collector is also the only way the TUI and the CLI act on tmux: it passes exact-name and
@@ -17,8 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/agents"
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/tmux"
+	"github.com/amirhosseinbanaei/perch/internal/agents"
+	"github.com/amirhosseinbanaei/perch/internal/tmux"
 )
 
 // Snapshot is the whole tmux server at one moment.

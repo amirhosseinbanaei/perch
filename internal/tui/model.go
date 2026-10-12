@@ -13,8 +13,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/agents"
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/snapshot"
+	"github.com/amirhosseinbanaei/perch/internal/agents"
+	"github.com/amirhosseinbanaei/perch/internal/snapshot"
 )
 
 // Options configure the TUI.

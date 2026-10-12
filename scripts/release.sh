@@ -7,7 +7,7 @@ VERSION="${1:?usage: scripts/release.sh VERSION}"
 VERSION="${VERSION#v}"
 cd "$(dirname "$0")/.."
 
-PKG=github.com/amirhosseinbanaei/tmux-manager-cli/internal/version
+PKG=github.com/amirhosseinbanaei/perch/internal/version
 COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo none)"
 DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 LDFLAGS="-s -w -X ${PKG}.Version=${VERSION} -X ${PKG}.Commit=${COMMIT} -X ${PKG}.Date=${DATE}"
@@ -24,13 +24,13 @@ for target in $TARGETS; do
     goarch=arm
     goarm=7
   fi
-  name="tmux-manager_${VERSION}_${os}_${arch}"
+  name="perch_${VERSION}_${os}_${arch}"
   stage="dist/.stage/${name}"
   mkdir -p "$stage"
   CGO_ENABLED=0 GOOS="$os" GOARCH="$goarch" GOARM="$goarm" \
-    go build -trimpath -ldflags "$LDFLAGS" -o "${stage}/tmux-manager" ./cmd/tmux-manager
+    go build -trimpath -ldflags "$LDFLAGS" -o "${stage}/perch" ./cmd/perch
   cp LICENSE README.md "$stage/"
-  tar -C "$stage" -czf "dist/${name}.tar.gz" tmux-manager LICENSE README.md
+  tar -C "$stage" -czf "dist/${name}.tar.gz" perch LICENSE README.md
 done
 rm -rf dist/.stage
 
@@ -40,7 +40,7 @@ if command -v sha256sum >/dev/null 2>&1; then
 else
   shasum -a 256 ./*.tar.gz | sed 's| \./| |' > checksums.txt
 fi
-echo "tmux-manager ${VERSION} (${COMMIT}) → dist/"
+echo "perch ${VERSION} (${COMMIT}) → dist/"
 for f in *.tar.gz checksums.txt; do
   printf '  %-48s %8s\n' "$f" "$(du -h "$f" | cut -f1)"
 done

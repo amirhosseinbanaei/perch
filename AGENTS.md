@@ -1,8 +1,8 @@
-# AGENTS.md: tmux-manager-cli
+# AGENTS.md: perch
 
 This is the repo's memory file, for anyone (person or agent) changing this code.
 
-`tmux-manager` (alias `tmm`) is one static Go binary. It lists tmux sessions, windows and panes,
+`perch` is one static Go binary. It lists tmux sessions, windows and panes,
 and shows which coding agent runs in each pane, with that agent's status, session id, title and
 path. It offers a TUI and a CLI. Usage is in [README.md](README.md).
 
@@ -10,7 +10,7 @@ path. It offers a TUI and a CLI. Usage is in [README.md](README.md).
 
 | Path                    | Job |
 | ----------------------- | --- |
-| `cmd/tmux-manager`      | `main`: `os.Exit(cli.Execute(os.Args[1:], cli.OSEnv()))` |
+| `cmd/perch`      | `main`: `os.Exit(cli.Execute(os.Args[1:], cli.OSEnv()))` |
 | `internal/tmux`         | **The only package that runs tmux.** `Runner{Socket, Path}` maps to `-L`/`-S`, always passes `-u`, and calls `exec.Command("tmux", args…)`, never a shell. Holds the two `-F` formats and their parsers, and the actions. Actions target `=name` or `%pane`. There is no kill-server path. |
 | `internal/agents`       | **The only package that reads agent state files.** `Table()` holds the detector table, one entry per agent. Also the matcher, the process table (`ps` plus `/proc`), Claude's registry and transcript titles, and the per-agent state readers and screen patterns. |
 | `internal/snapshot`     | The one model. `Collector.Collect` returns `Snapshot{Taken, Server, Sessions[Windows[Panes[Agent]]]}`. It also does exited tracking (60 s), `Diff` (log events), `Resolve` (TARGET), and pass-through actions. The TUI and the CLI reach tmux only through this package. |
@@ -47,7 +47,7 @@ With 35 panes and 23 agents on this machine, `agents --json` took a median of 73
 ## Decisions (item 5 of prompt 26)
 
 - **cobra, not the standard flag package.** Chosen as recommended: it gives completion
-  (`tmux-manager completion …`) and help for free, at a small size cost (release archives are
+  (`perch completion …`) and help for free, at a small size cost (release archives are
   2.5–2.8 MB).
 - **charmbracelet v2 (Bubble Tea v2.1.0, Bubbles v2.2.1, Lip Gloss v2.0.6).** v2 is the newest
   major with stable tagged releases on the build day (`go list -m -versions` lists v2.0.x and
@@ -64,12 +64,12 @@ With 35 panes and 23 agents on this machine, `agents --json` took a median of 73
   - Hermes and OpenCode keep sessions in SQLite, not one file per session.
   - Gemini always runs as two node processes.
   - Codex's native binary is named plain `codex`.
-- **Hosting:** GitHub at `amirhosseinbanaei/tmux-manager-cli`. The repo does not exist yet.
-  `install.sh` was tested only against a local server through `TMM_BASE_URL`.
+- **Hosting:** GitHub at `amirhosseinbanaei/perch` (first published as `tmux-manager-cli`).
+  `install.sh` was tested only against a local server through `PERCH_BASE_URL`.
 - **"All devices":** 40×12 and up, local or SSH, on Linux, macOS and Termux, with or without
   colour and Unicode. No Windows.
-- **Name:** the binary is `tmux-manager` and `tmm` is a symlink. The installer skips the alias
-  when another `tmm` is on PATH, or when a non-symlink `tmm` is in the target directory.
+- **Name:** `perch`. Version 0.1.0 was built and released as `tmux-manager`, with a `tmm`
+  alias. It was renamed on 2026-10-12, and there is no alias any more: the name is already short.
 
 Smaller decisions made while building:
 
@@ -138,7 +138,7 @@ They held while this was built, and they hold for any change.
   server. Kill a test process by the pid you started it with. The code has no kill-server path,
   and `kill` closes one session by its exact name (`=name`).
 - **Every integration test and manual check that creates or kills sessions uses a private
-  server**, `tmux -L tmm-test-<random>`. When it finishes, it removes only that server, with
+  server**, `tmux -L perch-test-<random>`. When it finishes, it removes only that server, with
   `kill-server` on that `-L` socket.
 - **Against the default server, run only read-only commands:** `ls`, `agents`, `log`, `peek`,
   `doctor`, and the TUI without actions.
@@ -170,7 +170,7 @@ What the tests cover:
   `go test ./internal/tui -update` to rewrite them.
 - Mouse handling, the filter and the forms.
 - CLI tables, exit codes, and kill refusing to run without `--yes` off a terminal.
-- Integration tests on a private `-L tmm-test-<random>` server: create, rename, send, capture,
+- Integration tests on a private `-L perch-test-<random>` server: create, rename, send, capture,
   kill, and "no server running". They are skipped when tmux is not on PATH.
 
 Manual checks done on 2026-10-12, all on private sockets:
@@ -185,9 +185,8 @@ Manual checks done on 2026-10-12, all on private sockets:
 - 35 panes: 73 ms median for `agents --json`.
 - `install.sh` was tested against a local `python3 -m http.server`-style server, under dash,
   bash, zsh and busybox sh, with curl and with wget only. It worked for the latest version
-  through the redirect, for a pinned `TMM_VERSION`, and for a re-run (upgrade). It refused both
-  a tampered checksum and a tampered archive. It skipped the `tmm` alias on a collision and
-  honoured `TMM_NO_ALIAS`.
+  through the redirect, for a pinned `PERCH_VERSION`, and for a re-run (upgrade). It refused both
+  a tampered checksum and a tampered archive.
 
 Not verified:
 

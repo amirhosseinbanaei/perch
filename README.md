@@ -1,6 +1,6 @@
-# tmux-manager
+# perch
 
-`tmux-manager` (alias `tmm`) lists every tmux session, window and pane. For each pane running
+`perch` lists every tmux session, window and pane. For each pane running
 one of five coding agents, it shows the agent's **status, session id, title and working path**,
 refreshed live:
 
@@ -20,19 +20,17 @@ You can use it as a full-screen TUI or as plain commands that print tables or JS
 ## Install
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/amirhosseinbanaei/tmux-manager-cli/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/amirhosseinbanaei/perch/main/install.sh | sh
 ```
 
 The script picks the build for your OS and CPU and checks it against `checksums.txt`. It
-installs `tmux-manager` and a `tmm` symlink. Running it again upgrades in place, and it never
-calls `sudo` itself.
+installs `perch`. Running it again upgrades in place, and it never calls `sudo` itself.
 
-| Variable          | Effect                                                                                 |
-| ----------------- | -------------------------------------------------------------------------------------- |
-| `TMM_VERSION`     | Install this version (`0.1.0` or `v0.1.0`) instead of the latest release              |
-| `TMM_INSTALL_DIR` | Install here. Default: `$PREFIX/bin` on Termux, else `/usr/local/bin` when writable, else `~/.local/bin` |
-| `TMM_NO_ALIAS=1`  | Do not create the `tmm` symlink. It is also skipped when another `tmm` is on PATH       |
-| `TMM_BASE_URL`    | Download from this base instead of GitHub Releases (files under `download/v<version>/`) |
+| Variable            | Effect                                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| `PERCH_VERSION`     | Install this version (`0.2.0` or `v0.2.0`) instead of the latest release                                 |
+| `PERCH_INSTALL_DIR` | Install here. Default: `$PREFIX/bin` on Termux, else `/usr/local/bin` when writable, else `~/.local/bin` |
+| `PERCH_BASE_URL`    | Download from this base instead of GitHub Releases (files under `download/v<version>/`)                  |
 
 To install system-wide when `/usr/local/bin` is not writable:
 `curl -fsSL …/install.sh | sudo sh`.
@@ -50,7 +48,7 @@ tmux itself is needed:
 
 ## The TUI
 
-Run `tmux-manager` (or `tmm`) with no arguments in a terminal. The layout follows the terminal's
+Run `perch` with no arguments in a terminal. The layout follows the terminal's
 width:
 
 | Width        | Layout                                                                     |
@@ -105,22 +103,22 @@ switches your client to the session and keeps the TUI running.
 ## Commands
 
 ```text
-tmux-manager                     the TUI on a terminal; otherwise the same as `ls`
-tmux-manager ls [--json]         sessions: name, windows, attached, created, activity, agents
-tmux-manager agents [--json] [--agent ID] [--status S]
+perch                     the TUI on a terminal; otherwise the same as `ls`
+perch ls [--json]         sessions: name, windows, attached, created, activity, agents
+perch agents [--json] [--agent ID] [--status S]
                                  one row per agent pane: TARGET AGENT STATUS SESSION-ID TITLE PATH AGE
-tmux-manager log [--follow] [--interval 2s] [--json] [--file PATH]
+perch log [--follow] [--interval 2s] [--json] [--file PATH]
                                  a status report; --follow prints one line per change
                                  (JSON Lines with --json); --file appends to PATH as well
-tmux-manager new NAME [-c DIR] [--agent ID | -- CMD...]
-tmux-manager attach TARGET
-tmux-manager rename OLD NEW
-tmux-manager kill NAME [--yes]   asks on a terminal; refuses without --yes otherwise
-tmux-manager send TARGET TEXT [--enter]
-tmux-manager peek TARGET [--lines N]
-tmux-manager doctor              tmux, socket, agents on PATH, state dirs, UTF-8, colour
-tmux-manager version
-tmux-manager completion bash|zsh|fish|powershell
+perch new NAME [-c DIR] [--agent ID | -- CMD...]
+perch attach TARGET
+perch rename OLD NEW
+perch kill NAME [--yes]   asks on a terminal; refuses without --yes otherwise
+perch send TARGET TEXT [--enter]
+perch peek TARGET [--lines N]
+perch doctor              tmux, socket, agents on PATH, state dirs, UTF-8, colour
+perch version
+perch completion bash|zsh|fish|powershell
 ```
 
 Global flags:
@@ -154,16 +152,15 @@ its arguments: the executable's name, or the script an interpreter runs. A `grep
 
 ## Publishing a release
 
-The GitHub repository does not exist yet. To publish:
+To publish a new version:
 
-1. Create `github.com/amirhosseinbanaei/tmux-manager-cli` on GitHub.
-2. `git remote add origin git@github.com:amirhosseinbanaei/tmux-manager-cli.git && git push -u origin main`
-3. `git tag v0.1.0 && git push origin v0.1.0`
+1. Merge your branch into `main` and `git push origin main`.
+2. `git tag v<version> && git push origin v<version>`, for example `v0.2.0`.
 
 The `release` workflow then runs `scripts/release.sh` and attaches the archives and
 `checksums.txt` to the GitHub Release. From then on, the one-line installer works.
 
-To build the archives locally: `scripts/release.sh 0.1.0` writes them to `dist/`.
+To build the archives locally: `scripts/release.sh 0.2.0` writes them to `dist/`.
 
 ## License
 

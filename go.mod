@@ -1,4 +1,4 @@
-module github.com/amirhosseinbanaei/tmux-manager-cli
+module github.com/amirhosseinbanaei/perch
 
 go 1.27.2
 

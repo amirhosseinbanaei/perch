@@ -1,24 +1,23 @@
 #!/bin/sh
-# tmux-manager installer: POSIX sh (dash, bash, zsh, busybox, Termux).
+# perch installer: POSIX sh (dash, bash, zsh, busybox, Termux).
 #
-#   curl -fsSL https://raw.githubusercontent.com/amirhosseinbanaei/tmux-manager-cli/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/amirhosseinbanaei/perch/main/install.sh | sh
 #
-# TMM_VERSION      version to install (default: the latest release)
-# TMM_INSTALL_DIR  where to put the binary (default: $PREFIX/bin on Termux, /usr/local/bin when
-#                  writable, else ~/.local/bin)
-# TMM_NO_ALIAS=1   do not create the tmm symlink
-# TMM_BASE_URL     download base (default: https://github.com/amirhosseinbanaei/tmux-manager-cli/releases);
-#                  files are read from $TMM_BASE_URL/download/v<version>/
+# PERCH_VERSION      version to install (default: the latest release)
+# PERCH_INSTALL_DIR  where to put the binary (default: $PREFIX/bin on Termux, /usr/local/bin when
+#                    writable, else ~/.local/bin)
+# PERCH_BASE_URL     download base (default: https://github.com/amirhosseinbanaei/perch/releases);
+#                    files are read from $PERCH_BASE_URL/download/v<version>/
 #
 # Re-running it upgrades in place. It never calls sudo.
 set -eu
 
-BASE="${TMM_BASE_URL:-https://github.com/amirhosseinbanaei/tmux-manager-cli/releases}"
+BASE="${PERCH_BASE_URL:-https://github.com/amirhosseinbanaei/perch/releases}"
 BASE="${BASE%/}"
 
 say() { printf '%s\n' "$*"; }
 die() {
-	printf 'tmux-manager install: %s\n' "$*" >&2
+	printf 'perch install: %s\n' "$*" >&2
 	exit 1
 }
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -58,8 +57,8 @@ latest() {
 	fi
 }
 
-if [ -n "${TMM_VERSION:-}" ]; then
-	version="${TMM_VERSION#v}"
+if [ -n "${PERCH_VERSION:-}" ]; then
+	version="${PERCH_VERSION#v}"
 else
 	url="$(latest)" || die "could not reach $BASE/latest"
 	url="$(printf '%s' "$url" | tr -d '\r')"
@@ -67,16 +66,16 @@ else
 	version="${tag#v}"
 fi
 case "$version" in
-'' | */* | *' '*) die "could not find the latest version at $BASE/latest; set TMM_VERSION" ;;
+'' | */* | *' '*) die "could not find the latest version at $BASE/latest; set PERCH_VERSION" ;;
 esac
 
 # ── fetch and verify ──────────────────────────────────────────────────────────
-tmp="$(mktemp -d 2>/dev/null || mktemp -d -t tmm)"
+tmp="$(mktemp -d 2>/dev/null || mktemp -d -t perch)"
 trap 'rm -rf "$tmp"' EXIT
 trap 'rm -rf "$tmp"; exit 130' INT TERM
 
-file="tmux-manager_${version}_${os}_${arch}.tar.gz"
-say "tmux-manager ${version} for ${os}/${arch}"
+file="perch_${version}_${os}_${arch}.tar.gz"
+say "perch ${version} for ${os}/${arch}"
 fetch "$BASE/download/v${version}/${file}" "$tmp/$file" || die "download failed: $BASE/download/v${version}/${file}"
 fetch "$BASE/download/v${version}/checksums.txt" "$tmp/checksums.txt" || die "download failed: checksums.txt"
 
@@ -93,8 +92,8 @@ if [ "$expected" != "$actual" ]; then
 	die "checksum mismatch for $file (expected $expected, got $actual); refusing to install"
 fi
 
-gzip -dc "$tmp/$file" | (cd "$tmp" && tar -xf - tmux-manager) || die "could not unpack $file"
-[ -f "$tmp/tmux-manager" ] || die "$file holds no tmux-manager binary"
+gzip -dc "$tmp/$file" | (cd "$tmp" && tar -xf - perch) || die "could not unpack $file"
+[ -f "$tmp/perch" ] || die "$file holds no perch binary"
 
 # ── install ───────────────────────────────────────────────────────────────────
 termux=false
@@ -103,8 +102,8 @@ if [ -n "${TERMUX_VERSION:-}" ] || case "${PREFIX:-}" in *com.termux*) true ;; *
 fi
 
 hint=""
-if [ -n "${TMM_INSTALL_DIR:-}" ]; then
-	dir="$TMM_INSTALL_DIR"
+if [ -n "${PERCH_INSTALL_DIR:-}" ]; then
+	dir="$PERCH_INSTALL_DIR"
 elif [ "$termux" = true ]; then
 	dir="$PREFIX/bin"
 elif [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; then
@@ -114,28 +113,14 @@ else
 	hint=yes
 fi
 mkdir -p "$dir" || die "cannot create $dir"
-[ -w "$dir" ] || die "$dir is not writable. Re-run with TMM_INSTALL_DIR set, or as root:
-  curl -fsSL https://raw.githubusercontent.com/amirhosseinbanaei/tmux-manager-cli/main/install.sh | sudo sh"
+[ -w "$dir" ] || die "$dir is not writable. Re-run with PERCH_INSTALL_DIR set, or as root:
+  curl -fsSL https://raw.githubusercontent.com/amirhosseinbanaei/perch/main/install.sh | sudo sh"
 
-# Replace atomically, so a running tmux-manager keeps working during an upgrade.
-cp "$tmp/tmux-manager" "$dir/.tmux-manager.new"
-chmod 755 "$dir/.tmux-manager.new"
-mv -f "$dir/.tmux-manager.new" "$dir/tmux-manager"
-say "installed $dir/tmux-manager"
-
-if [ "${TMM_NO_ALIAS:-}" != 1 ]; then
-	other="$(command -v tmm 2>/dev/null || true)"
-	if [ -L "$dir/tmm" ] || [ ! -e "$dir/tmm" ]; then
-		if [ -n "$other" ] && [ "$other" != "$dir/tmm" ]; then
-			say "skipped the tmm alias: tmm is already $other"
-		else
-			ln -sf tmux-manager "$dir/tmm"
-			say "linked $dir/tmm → tmux-manager"
-		fi
-	else
-		say "skipped the tmm alias: $dir/tmm exists and is not a symlink"
-	fi
-fi
+# Replace atomically, so a running perch keeps working during an upgrade.
+cp "$tmp/perch" "$dir/.perch.new"
+chmod 755 "$dir/.perch.new"
+mv -f "$dir/.perch.new" "$dir/perch"
+say "installed $dir/perch"
 
 if [ -n "$hint" ]; then
 	case ":$PATH:" in
@@ -145,7 +130,7 @@ if [ -n "$hint" ]; then
 		say "$dir is not on your PATH. Add it, e.g. in ~/.profile:"
 		say "  export PATH=\"\$HOME/.local/bin:\$PATH\""
 		say "or install system-wide with:"
-		say "  curl -fsSL https://raw.githubusercontent.com/amirhosseinbanaei/tmux-manager-cli/main/install.sh | sudo sh"
+		say "  curl -fsSL https://raw.githubusercontent.com/amirhosseinbanaei/perch/main/install.sh | sudo sh"
 		;;
 	esac
 fi
@@ -169,4 +154,4 @@ if ! have tmux; then
 	say "warning: tmux is not installed. Install it with: $cmd"
 fi
 
-"$dir/tmux-manager" version || true
+"$dir/perch" version || true

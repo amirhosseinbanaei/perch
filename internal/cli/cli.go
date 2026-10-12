@@ -23,11 +23,11 @@ import (
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/agents"
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/snapshot"
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/tmux"
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/tui"
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/version"
+	"github.com/amirhosseinbanaei/perch/internal/agents"
+	"github.com/amirhosseinbanaei/perch/internal/snapshot"
+	"github.com/amirhosseinbanaei/perch/internal/tmux"
+	"github.com/amirhosseinbanaei/perch/internal/tui"
+	"github.com/amirhosseinbanaei/perch/internal/version"
 )
 
 // Exit codes.
@@ -88,7 +88,7 @@ func Execute(args []string, env Env) int {
 	if err == nil {
 		return ExitOK
 	}
-	fmt.Fprintln(env.Stderr, "tmux-manager:", err)
+	fmt.Fprintln(env.Stderr, "perch:", err)
 	var ee *exitError
 	switch {
 	case errors.As(err, &ee):
@@ -161,9 +161,9 @@ func NewRoot(env Env) *cobra.Command {
 	a := &app{env: env}
 	a.home, _ = os.UserHomeDir()
 	root := &cobra.Command{
-		Use:           "tmux-manager",
+		Use:           "perch",
 		Short:         "See and manage tmux sessions and the coding agents running in them",
-		Long:          "tmux-manager lists every tmux session, window and pane, and for panes running Claude Code,\nCodex CLI, Hermes Agent, Gemini CLI or OpenCode shows the agent's status, session id, title\nand path. With no command on a terminal it opens a full-screen TUI.",
+		Long:          "perch lists every tmux session, window and pane, and for panes running Claude Code,\nCodex CLI, Hermes Agent, Gemini CLI or OpenCode shows the agent's status, session id, title\nand path. With no command on a terminal it opens a full-screen TUI.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Args:          noArgs,
@@ -803,7 +803,7 @@ func (a *app) versionCmd() *cobra.Command {
 		Short: "Print the version, commit and build date",
 		Args:  exactArgs(0),
 		RunE: func(*cobra.Command, []string) error {
-			fmt.Fprintf(a.env.Stdout, "tmux-manager %s (commit %s, built %s, %s/%s)\n", version.Version, version.Commit, version.Date, runtime.GOOS, runtime.GOARCH)
+			fmt.Fprintf(a.env.Stdout, "perch %s (commit %s, built %s, %s/%s)\n", version.Version, version.Commit, version.Date, runtime.GOOS, runtime.GOARCH)
 			return nil
 		},
 	}

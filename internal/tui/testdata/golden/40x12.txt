@@ -1,4 +1,4 @@
-[1mtmm[m 3 sess · 3 agents · ◆ waiting 1
+[1mperch[m 3 sess · 3 agents · ◆ waiting 1
  [1mapi-server[m 2w att
 [7m›  claude   ● working  Fix flaky int… 5s[m
    codex    ◆ waiting  host           2m

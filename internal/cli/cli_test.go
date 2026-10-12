@@ -12,7 +12,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/tui"
+	"github.com/amirhosseinbanaei/perch/internal/tui"
 )
 
 func TestTableFitsWidth(t *testing.T) {
@@ -73,7 +73,7 @@ func privateSocket(t *testing.T) string {
 	}
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
-	s := "tmm-test-" + hex.EncodeToString(b)
+	s := "perch-test-" + hex.EncodeToString(b)
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", s, "kill-server").Run() })
 	return s
 }
@@ -148,7 +148,7 @@ func TestUsageErrors(t *testing.T) {
 			t.Errorf("%q exit %d, want %d (%s)", args, r.code, ExitUsage, r.stderr)
 		}
 	}
-	if r := execute(t, false, "version"); r.code != 0 || !strings.HasPrefix(r.stdout, "tmux-manager dev") {
+	if r := execute(t, false, "version"); r.code != 0 || !strings.HasPrefix(r.stdout, "perch dev") {
 		t.Errorf("version = %+v", r)
 	}
 }

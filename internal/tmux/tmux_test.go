@@ -65,7 +65,7 @@ func TestArgs(t *testing.T) {
 	}
 }
 
-// privateRunner returns a runner on a fresh tmm-test-<random> socket. Cleanup removes that
+// privateRunner returns a runner on a fresh perch-test-<random> socket. Cleanup removes that
 // server only, with kill-server on that -L socket.
 func privateRunner(t *testing.T) Runner {
 	t.Helper()
@@ -76,7 +76,7 @@ func privateRunner(t *testing.T) Runner {
 	if _, err := rand.Read(b); err != nil {
 		t.Fatal(err)
 	}
-	r := Runner{Socket: "tmm-test-" + hex.EncodeToString(b)}
+	r := Runner{Socket: "perch-test-" + hex.EncodeToString(b)}
 	t.Cleanup(func() {
 		_ = exec.Command("tmux", "-L", r.Socket, "kill-server").Run()
 	})

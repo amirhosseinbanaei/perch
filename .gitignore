@@ -1,4 +1,4 @@
 /dist/
-/tmux-manager
+/perch
 *.test
 *.out

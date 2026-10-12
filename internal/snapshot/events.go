@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/agents"
+	"github.com/amirhosseinbanaei/perch/internal/agents"
 )
 
 // Event kinds: the changes `log --follow` and the TUI's log view report.

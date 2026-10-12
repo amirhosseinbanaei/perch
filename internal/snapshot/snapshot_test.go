@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/agents"
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/tmux"
+	"github.com/amirhosseinbanaei/perch/internal/agents"
+	"github.com/amirhosseinbanaei/perch/internal/tmux"
 )
 
 func sample() *Snapshot {
@@ -150,7 +150,7 @@ func TestCollectPrivateServer(t *testing.T) {
 	}
 	b := make([]byte, 6)
 	_, _ = rand.Read(b)
-	r := tmux.Runner{Socket: "tmm-test-" + hex.EncodeToString(b)}
+	r := tmux.Runner{Socket: "perch-test-" + hex.EncodeToString(b)}
 	t.Cleanup(func() { _ = exec.Command("tmux", "-L", r.Socket, "kill-server").Run() })
 	ctx := context.Background()
 	c := New(r, Options{Inspector: &agents.Inspector{Home: t.TempDir(), Getenv: func(string) string { return "" }, Now: time.Now}})

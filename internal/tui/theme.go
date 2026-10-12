@@ -9,7 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/agents"
+	"github.com/amirhosseinbanaei/perch/internal/agents"
 )
 
 // Theme is how text is drawn, shared by the TUI and the CLI tables: one badge renderer for both.

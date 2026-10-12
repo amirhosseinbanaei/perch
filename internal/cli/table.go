@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/amirhosseinbanaei/tmux-manager-cli/internal/tui"
+	"github.com/amirhosseinbanaei/perch/internal/tui"
 )
 
 // table is the one renderer every CLI table uses. Cells may hold styles (badges); widths are

@@ -1,4 +1,4 @@
-[1mtmux-manager[m 3 sessions · 3 agents · ◆ waiting 1
+[1mperch[m 3 sessions · 3 agents · ◆ waiting 1
  [1mapi-server[m 2w att
 [7m›  claude   ● working  Fix flaky integration tests in the payments module     5s[m
    codex    ◆ waiting  host                                                   2m

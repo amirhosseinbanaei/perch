@@ -1,5 +1,7 @@
 # perch
 
+![perch in the coral theme at 140×40](docs/screenshots/coral-140x40.png)
+
 `perch` lists every tmux session, window and pane. For each pane running
 one of five coding agents, it shows the agent's **status, session id, title and working path**,
 refreshed live:
@@ -48,54 +50,104 @@ tmux itself is needed:
 
 ## The TUI
 
-Run `perch` with no arguments in a terminal. The layout follows the terminal's
-width:
+Run `perch` with no arguments in a terminal. It is built from rounded panels: a header with
+the status counts, **Sessions**, **Detail**, and a command bar. The layout follows the
+terminal's width:
 
-| Width        | Layout                                                                     |
-| ------------ | -------------------------------------------------------------------------- |
-| under 60     | One list of sessions. Enter opens a full-screen detail view, Esc goes back |
-| 60–99        | The list, with the detail below it                                         |
-| 100 and wider | The list on the left, the detail on the right                             |
+| Width         | Layout                                                                     |
+| ------------- | -------------------------------------------------------------------------- |
+| under 60      | Sessions only. Enter opens Detail full-screen, Esc goes back               |
+| 60–99         | Sessions, with Detail below it                                             |
+| 100 and wider | Sessions on the left (40%), Detail on the right                            |
 
-Under 16 rows, the preview is hidden.
+Under 16 rows the header and the command bar shrink to one line each and the live preview is
+hidden. Tab and Shift-Tab move focus between Sessions and Detail; the focused panel's border is
+in the accent colour. Arrow keys act on the focused panel: in Detail they scroll the preview.
 
-Each session shows its name, the window count, and `att` when a client is attached. Under it
-are its agent panes: the agent, a status badge, the title and the age of the last activity.
+| 80×24, teal | 80×24, violet | 40×12, coral |
+| ----------- | ------------- | ------------ |
+| ![teal](docs/screenshots/teal-80x24.png) | ![violet](docs/screenshots/violet-80x24.png) | ![coral on a phone-sized screen](docs/screenshots/coral-40x12.png) |
 
-| Status   | Badge | ASCII |
-| -------- | ----- | ----- |
-| working  | `●`   | `*`   |
-| waiting  | `◆`   | `!`   |
-| idle     | `○`   | `o`   |
-| exited   | `✕`   | `x`   |
-| starting | `…`   | `~`   |
+Each session shows its name, the window count, and an `att` pill when a client is attached.
+Under it are its agent panes: a status symbol, the agent, the title and the age of the last
+activity. A waiting agent says `needs you`. A working agent's symbol spins.
 
-`waiting` means the agent needs a person: a permission or trust dialog, or a question. An agent
-that ends while its pane stays open is shown as `exited` for 60 s.
+| Status   | Symbol      | ASCII |
+| -------- | ----------- | ----- |
+| working  | `●` (spins) | `*`   |
+| waiting  | `◆`         | `!`   |
+| idle     | `○`         | `o`   |
+| exited   | `✕`         | `x`   |
+| starting | `…`         | `~`   |
 
-The detail pane shows the full session id, title, path, pid, uptime, and where each field came
-from (Source and Confidence). Below them is a live preview of the pane.
+`waiting` means the agent needs a person: a permission or trust dialog, or a question. When an
+agent turns waiting, its row pulses for 3 s and a toast says so (`--bell` also rings the
+terminal bell). An agent that ends while its pane stays open is shown as `exited` for 60 s.
+
+Detail shows the status and uptime, the full session id, title, path, pid and target, and under
+them a live panel with the pane's last lines. `/source` (or `--verbose`) adds where each field
+came from.
+
+### Keys
 
 | Key            | Action                                                                     |
 | -------------- | -------------------------------------------------------------------------- |
-| `↑` `↓` / `j` `k` | Move (also PgUp/PgDn, Home, End/`G`)                                     |
-| `enter`        | Attach to the session; in the narrow layout, open the detail view          |
+| `↑` `↓` / `j` `k` | Move, or scroll the preview when Detail has focus (also PgUp/PgDn, Home, End/`G`) |
+| `tab`          | Focus Sessions or Detail                                                   |
+| `enter`        | Attach to the session; in the narrow layout, open Detail                   |
 | `a`            | Attach                                                                     |
-| `n`            | New session: name, directory, optional agent                               |
+| `n`            | New session: name, directory, and an agent picked from those on PATH       |
 | `r`            | Rename the session                                                         |
 | `x`            | Kill the session. It asks first, and the default is No                     |
 | `s`            | Send text to the pane. `tab` toggles "and press Enter"                     |
-| `p`            | Toggle the preview                                                         |
-| `/`            | Filter by session, agent, status, title or path. Esc clears it             |
+| `p`            | Toggle the live preview                                                    |
 | `g`            | Show only sessions with agents                                             |
 | `l`            | The log of changes seen in this run                                        |
+| `t`            | Next theme: coral → teal → violet. It is saved                             |
 | `y`            | Copy the session id with OSC 52, which also works over SSH                 |
 | `R`            | Refresh now                                                                |
 | `?`            | Help                                                                       |
+| `/` or `:`     | The command bar (below)                                                    |
+| any other key  | Starts a filter in the command bar                                         |
 | `q` / `ctrl+c` | Quit                                                                       |
 
-No key needs Alt or a function key. The mouse wheel scrolls, a click selects, and a click on the
-selected row opens it.
+No key needs Alt or a function key. The mouse wheel scrolls the panel under it, a click
+focuses a panel and selects a row, and a click on the selected row opens it.
+
+### The command bar
+
+`/` (or `:`) opens the bar with a popup of commands; Tab completes, Up and Down choose, Enter
+runs, Esc leaves. Without an argument a command acts on the selection.
+
+```text
+/attach [target]   /new <name> [-c dir] [--agent id]   /rename <new name>   /kill [name]
+/send <text>       /filter <text>   /agents   /theme [coral|teal|violet]   /preview
+/source            /log   /refresh   /help   /quit
+```
+
+`/kill` only opens the confirm; typing it never kills. `/new`, `/rename` and `/send` with no
+argument open their forms. Errors show under the bar.
+
+**Filtering changed:** `/` used to start the filter. Now typing any key that is not a shortcut
+starts a filter and updates the list as you type; Enter keeps it and Esc clears it. To filter
+by a word that starts with a shortcut letter, use `/filter <text>`, or type `/` and the word:
+a `/word` that names no command filters by it.
+
+### Themes
+
+Three themes, each with a dark and a light variant picked from the terminal's background:
+**coral** (the default), **teal** and **violet**. The theme comes from `--theme`, then
+`PERCH_THEME`, then the `theme` key in `$XDG_CONFIG_HOME/perch/config.json` (else
+`~/.config/perch/config.json`). `t` and `/theme` switch it and save it there; other keys in the
+file are kept. A bad file or name is reported in the footer and the default is used.
+
+Without colour (`--no-color`, `NO_COLOR`) the TUI uses bold and dim only, and the status
+symbols. `--no-anim` (or `PERCH_NO_ANIM=1`) stops the spinner and the pulse; animation is also
+off without colour.
+
+When there are no sessions:
+
+![the empty state](docs/screenshots/empty-80x24.png)
 
 Attaching outside tmux suspends the TUI. Detaching (`ctrl-b d`) brings it back. Inside tmux, it
 switches your client to the session and keeps the TUI running.
@@ -129,7 +181,9 @@ Global flags:
 | `-S PATH`     | Same as tmux's `-S`                            |
 | `--no-color`  | No colour. `NO_COLOR` is honoured too           |
 | `--ascii`     | ASCII only. Automatic when the locale is not UTF-8 |
-| `--verbose`   | Adds PID, CONF, SOURCE and NOTE columns        |
+| `--verbose`   | Adds PID, CONF, SOURCE and NOTE columns; in the TUI, shows Source |
+
+TUI-only flags: `--theme coral|teal|violet`, `--no-anim`, `--bell`, `--interval 2s`.
 
 A TARGET is a session name, `session:window.pane`, or a pane id `%N`. A target that matches more
 than one thing is rejected.

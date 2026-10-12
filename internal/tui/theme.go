@@ -16,9 +16,21 @@ import (
 type Theme struct {
 	Color bool // false: no colour at all (--no-color, NO_COLOR, not a terminal)
 	ASCII bool // --ascii, or a locale that is not UTF-8
-	// Dark selects the adaptive palette once the terminal's background is known. nil (the CLI)
-	// uses the 16 basic ANSI colours, which every terminal theme tunes for its own background.
+	// Dark is the terminal's background once it is known; until then the TUI uses the dark
+	// variant and draws no Surface background.
 	Dark *bool
+	// Name is the TUI's palette (coral, teal, violet). The CLI leaves it empty and never
+	// compiles the theme, so its tables keep the 16 basic ANSI colours, which every terminal
+	// theme tunes for its own background.
+	Name string
+	st   *styles // compiled palette styles; nil in the CLI
+}
+
+// Compile builds the palette's styles. The TUI calls it when the theme, the background or the
+// colour mode changes, never per frame.
+func (t Theme) Compile() Theme {
+	t.st = newStyles(t)
+	return t
 }
 
 // UTF8Locale reports whether the first of LC_ALL, LC_CTYPE and LANG that is set names UTF-8.
@@ -59,48 +71,43 @@ const BadgeWidth = 10
 // Badge pairs the symbol and the word with the status colour: never colour alone.
 func (t Theme) Badge(s agents.Status) string {
 	text := t.Symbol(s) + " " + string(s)
+	if t.st != nil {
+		if s == agents.Waiting {
+			return t.st.waitingBold.S(text)
+		}
+		return t.st.statusPaint(s).S(text)
+	}
 	if !t.Color {
 		return text
 	}
-	st := lipgloss.NewStyle().Foreground(t.statusColor(s))
+	st := lipgloss.NewStyle().Foreground(statusColor(s))
 	if s == agents.Waiting {
 		st = st.Bold(true)
 	}
 	return st.Render(text)
 }
 
-func (t Theme) statusColor(s agents.Status) color.Color {
-	if t.Dark == nil {
-		switch s {
-		case agents.Working:
-			return lipgloss.Green
-		case agents.Waiting:
-			return lipgloss.Yellow
-		case agents.Idle:
-			return lipgloss.Cyan
-		case agents.Starting:
-			return lipgloss.Blue
-		default:
-			return lipgloss.BrightBlack
-		}
-	}
-	ld := lipgloss.LightDark(*t.Dark)
+// statusColor is the CLI's status colour, one of the 16 ANSI colours.
+func statusColor(s agents.Status) color.Color {
 	switch s {
 	case agents.Working:
-		return ld(lipgloss.Color("#1A7F37"), lipgloss.Color("#3FB950"))
+		return lipgloss.Green
 	case agents.Waiting:
-		return ld(lipgloss.Color("#9A6700"), lipgloss.Color("#E3B341"))
+		return lipgloss.Yellow
 	case agents.Idle:
-		return ld(lipgloss.Color("#0969DA"), lipgloss.Color("#58A6FF"))
+		return lipgloss.Cyan
 	case agents.Starting:
-		return ld(lipgloss.Color("#8250DF"), lipgloss.Color("#BC8CFF"))
+		return lipgloss.Blue
 	default:
-		return ld(lipgloss.Color("#57606A"), lipgloss.Color("#8B949E"))
+		return lipgloss.BrightBlack
 	}
 }
 
-// Dim renders secondary text faint.
+// Dim renders secondary text: faint in the CLI, Muted in the TUI.
 func (t Theme) Dim(s string) string {
+	if t.st != nil {
+		return t.st.muted.S(s)
+	}
 	if !t.Color {
 		return s
 	}
@@ -109,24 +116,21 @@ func (t Theme) Dim(s string) string {
 
 // Bold renders emphasis. It is an attribute, not a colour, so it stays with --no-color.
 func (t Theme) Bold(s string) string {
+	if t.st != nil {
+		return t.st.bold.S(s)
+	}
 	return lipgloss.NewStyle().Bold(true).Render(s)
-}
-
-// Reverse marks the selected row; it needs no colour either.
-func (t Theme) Reverse(s string) string {
-	return lipgloss.NewStyle().Reverse(true).Render(s)
 }
 
 // Error renders an error message.
 func (t Theme) Error(s string) string {
+	if t.st != nil {
+		return t.st.danger.S(s)
+	}
 	if !t.Color {
 		return s
 	}
-	var c color.Color = lipgloss.Red
-	if t.Dark != nil {
-		c = lipgloss.LightDark(*t.Dark)(lipgloss.Color("#CF222E"), lipgloss.Color("#FF7B72"))
-	}
-	return lipgloss.NewStyle().Foreground(c).Render(s)
+	return lipgloss.NewStyle().Foreground(lipgloss.Red).Render(s)
 }
 
 // Ellipsis is "…", or "..." in ASCII mode.

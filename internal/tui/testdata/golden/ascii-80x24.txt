@@ -1,0 +1,24 @@
+[2m+------------------------------------------------------------------------------+[m
+[2m|[m [1m* perch[m                                                [2m3 sessions - 3 agents[m [2m|[m
+[2m|[m [1m! 1 waiting[m  [2m* 1 working[m  [2mo 1 idle[m                            [2mupdated 2s ago[m [2m|[m
+[2m+------------------------------------------------------------------------------+[m
++- [1mSessions[m -------------------------------------------------------------------+
+|  [1mapi-server[m [2m2w[m [7m att [m                                                         |
+|>   [2m*[m claude   Fix flaky integration tests in the payments module          [2m5s[m |
+|    [2m![m codex    [1mneeds you[m host                                              [2m2m[m |
+|  [1mnotes[m [2m1w[m                                                                    |
+|  [1münïcode 🙂 box[m [2m1w[m                                                           |
+|    [2mo[m gemini   Refactor the parser                                        [2m20s[m |
++------------------------------------------------------------------------------+
+[2m+-[m [2m*[m [2mClaude Code[m [2m--------------------------------------------------------------+[m
+[2m|[m [2mworking[m[2m - up 42m[m                                                             [2m|[m
+[2m|[m [2mSession  [m11111111-2222-4333-8444-555555555555  [2my copy[m                        [2m|[m
+[2m|[m [2mTitle    [mFix flaky integration tests in the payments module                  [2m|[m
+[2m|[m [2mPath     [m~/src/api                                                           [2m|[m
+[2m|[m [2mPID      [m4242                                                                [2m|[m
+[2m|[m [2mTarget   [mapi-server:0.0 %0                                                   [2m|[m
+[2m+------------------------------------------------------------------------------+[m
+[2m+------------------------------------------------------------------------------+[m
+[2m|[m [2m> type / for commands - or start typing to filter[m                            [2m|[m
+[2m+------------------------------------------------------------------------------+[m
+[2mjk move - enter attach - tab focus - / commands - t theme - ? help - q quit[m     

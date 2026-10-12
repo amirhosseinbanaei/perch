@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/amirhosseinbanaei/perch/internal/agents"
+	"github.com/amirhosseinbanaei/perch/internal/config"
 	"github.com/amirhosseinbanaei/perch/internal/snapshot"
 	"github.com/amirhosseinbanaei/perch/internal/tmux"
 	"github.com/amirhosseinbanaei/perch/internal/tui"
@@ -123,6 +124,9 @@ type app struct {
 	ascii     bool
 	verbose   bool
 	interval  time.Duration
+	themeName string
+	noAnim    bool
+	bell      bool
 	home      string
 	collector *snapshot.Collector
 }
@@ -194,6 +198,9 @@ func NewRoot(env Env) *cobra.Command {
 	pf.BoolVar(&a.ascii, "ascii", false, "ASCII symbols only (automatic when the locale is not UTF-8)")
 	pf.BoolVar(&a.verbose, "verbose", false, "show where each field came from")
 	root.Flags().DurationVar(&a.interval, "interval", 2*time.Second, "TUI refresh interval")
+	root.Flags().StringVar(&a.themeName, "theme", "", "TUI theme: coral, teal or violet (PERCH_THEME; t switches and saves it)")
+	root.Flags().BoolVar(&a.noAnim, "no-anim", false, "TUI without animation (PERCH_NO_ANIM=1)")
+	root.Flags().BoolVar(&a.bell, "bell", false, "TUI rings the terminal bell when an agent starts waiting")
 
 	root.AddCommand(a.lsCmd(), a.agentsCmd(), a.logCmd(), a.newCmd(), a.attachCmd(), a.renameCmd(),
 		a.killCmd(), a.sendCmd(), a.peekCmd(), a.doctorCmd(), a.versionCmd())
@@ -221,7 +228,23 @@ func (a *app) runTUI() error {
 	if a.noColor || a.env.Getenv("NO_COLOR") != "" {
 		opts = append(opts, tea.WithColorProfile(colorprofile.Ascii))
 	}
-	m := tui.New(tui.Options{Collector: a.collector, Interval: a.interval, Theme: a.theme(true), Home: a.home})
+	th := a.theme(true)
+	cfgPath, err := config.Path(a.env.Getenv, a.home)
+	var file config.File
+	if err == nil {
+		file, err = config.Load(cfgPath)
+	}
+	var warn string
+	th.Name, warn = config.ResolveTheme(a.themeName, a.env.Getenv("PERCH_THEME"), file, err)
+	var save func(string) error
+	if cfgPath != "" {
+		save = func(name string) error { return config.SaveTheme(cfgPath, name) }
+	}
+	m := tui.New(tui.Options{
+		Collector: a.collector, Interval: a.interval, Theme: th, Home: a.home,
+		SaveTheme: save, Warning: warn, Verbose: a.verbose, Bell: a.bell,
+		NoAnim: a.noAnim || a.env.Getenv("PERCH_NO_ANIM") == "1",
+	})
 	if _, err := tea.NewProgram(m, opts...).Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
 	}

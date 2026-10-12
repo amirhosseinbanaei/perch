@@ -4,6 +4,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/amirhosseinbanaei/perch/internal/agents"
+	"github.com/amirhosseinbanaei/perch/internal/config"
 	"github.com/amirhosseinbanaei/perch/internal/snapshot"
 )
 
@@ -26,6 +28,12 @@ type Options struct {
 	Now       func() time.Time
 	// LookPath finds an agent's executable for the new-session form (exec.LookPath).
 	LookPath func(string) (string, error)
+	// SaveTheme persists a theme chosen with t or /theme; nil saves nothing.
+	SaveTheme func(name string) error
+	Warning   string // shown in the footer at start, e.g. an unreadable config file
+	NoAnim    bool   // no spinner and no pulse (--no-anim, PERCH_NO_ANIM=1)
+	Bell      bool   // ring the terminal bell when an agent turns waiting (--bell)
+	Verbose   bool   // show Source in the detail from the start (--verbose)
 }
 
 type mode int
@@ -39,7 +47,6 @@ const (
 	modeRename
 	modeSend
 	modeKill
-	modeFilter
 )
 
 type rowKind int
@@ -77,20 +84,39 @@ type Model struct {
 	agentsOnly    bool
 	filter        string
 
-	inputs     []textinput.Model // the active form's fields
-	focus      int
-	sendEnter  bool
-	killYes    bool
-	formTarget string // session the form acts on
+	focusDetail bool // Tab: arrows act on Detail (scroll the preview) instead of Sessions
+	previewOff  int  // lines the live preview is scrolled up from its bottom
+	showSource  bool
 
-	status     string
-	statusErr  bool
-	refreshing bool
-	logOffset  int
-	helpOffset int
+	inputs       []textinput.Model // the active form's text fields
+	focus        int               // the form's focused field; in new, 2 is the agent picker
+	agentChoices []string          // new: "shell" and the agents found on PATH
+	agentPick    int
+	sendEnter    bool
+	killYes      bool
+	formTarget   string // session the form acts on
 
-	// The list's screen region, recorded by View for mouse hits.
-	listTop, listRows, listLeft, listWidth int
+	bar            textinput.Model // the command bar
+	barOn          bool
+	barErr         string
+	barSel, barOff int // the popup's selected command
+
+	status       string
+	statusErr    bool
+	refreshing   bool
+	refreshStart time.Time
+	logOffset    int
+	helpOffset   int
+
+	frame       int                  // spinner frame
+	animPending bool                 // an animation tick is scheduled
+	pulses      map[string]time.Time // pane → when it turned waiting
+	toast       toast
+	toastID     int
+
+	// The layout as last drawn, for mouse hits, and the list's visible rows.
+	lay      layout
+	listRows int
 }
 
 // New returns the model; run it with tea.NewProgram(m).
@@ -104,7 +130,15 @@ func New(o Options) Model {
 	if o.LookPath == nil {
 		o.LookPath = exec.LookPath
 	}
-	return Model{opts: o, theme: o.Theme, preview: true, sendEnter: true, width: 80, height: 24}
+	if o.Theme.Name == "" {
+		o.Theme.Name = config.DefaultTheme
+	}
+	m := Model{opts: o, theme: o.Theme.Compile(), preview: true, sendEnter: true, showSource: o.Verbose, width: 80, height: 24}
+	m.bar = m.newBar()
+	if o.Warning != "" {
+		m.status, m.statusErr = o.Warning, true
+	}
+	return m
 }
 
 // Messages.
@@ -127,6 +161,10 @@ type (
 		session string
 	}
 	attachDoneMsg struct{ err error }
+	themeSavedMsg struct {
+		name string
+		err  error
+	}
 )
 
 // Init starts the first refresh and the timer, and asks for the background colour.
@@ -148,9 +186,17 @@ func (m Model) tickCmd() tea.Cmd {
 	return tea.Tick(m.opts.Interval, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
+func (m *Model) startRefresh() tea.Cmd {
+	if m.refreshing {
+		return nil
+	}
+	m.refreshing, m.refreshStart = true, m.opts.Now()
+	return m.refreshCmd()
+}
+
 func (m Model) previewCmd() tea.Cmd {
 	pane := m.selectedPaneID()
-	if !m.preview || pane == "" || m.height < 16 {
+	if !m.preview || pane == "" || m.height < previewMinH {
 		return nil
 	}
 	c := m.opts.Collector
@@ -178,6 +224,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
 	nm := next.(Model)
 	nm.syncLayout()
+	if nm.needAnim() && !nm.animPending {
+		nm.animPending = true
+		cmd = tea.Batch(cmd, animCmd())
+	}
 	return nm, cmd
 }
 
@@ -190,14 +240,24 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.BackgroundColorMsg:
 		dark := msg.IsDark()
 		m.theme.Dark = &dark
+		m.theme = m.theme.Compile()
 		return m, nil
 	case tickMsg:
-		cmds := []tea.Cmd{m.tickCmd()}
-		if !m.refreshing {
-			m.refreshing = true
-			cmds = append(cmds, m.refreshCmd())
+		return m, tea.Batch(m.tickCmd(), m.startRefresh())
+	case animMsg:
+		m.animPending = false
+		m.stepAnim()
+		return m, nil
+	case toastMsg:
+		if msg.id == m.toastID {
+			m.toast = toast{}
 		}
-		return m, tea.Batch(cmds...)
+		return m, nil
+	case themeSavedMsg:
+		if msg.err != nil {
+			return m, m.showToast("theme "+msg.name+" not saved: "+firstLine(msg.err.Error()), toastError)
+		}
+		return m, nil
 	case snapMsg:
 		m.refreshing = false
 		if msg.err != nil {
@@ -207,8 +267,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.statusErr && strings.HasPrefix(m.status, "refresh failed") {
 			m.status, m.statusErr = "", false
 		}
-		m.setSnapshot(msg.snap)
-		return m, m.previewCmd()
+		cmd := m.setSnapshot(msg.snap)
+		return m, tea.Batch(cmd, m.previewCmd())
 	case previewMsg:
 		m.previewPane, m.previewText = msg.pane, msg.text
 		return m, nil
@@ -218,8 +278,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.status, m.statusErr = msg.text, false
 		}
-		m.refreshing = true
-		return m, m.refreshCmd()
+		m.refreshing = false
+		return m, m.startRefresh()
 	case attachPlanMsg:
 		if msg.inPlace {
 			return m, m.actionCmd("switched to "+msg.session, func(context.Context) error { return runErr(msg.cmd) })
@@ -229,9 +289,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.status, m.statusErr = "attach: "+firstLine(msg.err.Error()), true
 		}
-		m.refreshing = true
-		return m, m.refreshCmd()
+		m.refreshing = false
+		return m, m.startRefresh()
 	case tea.PasteMsg:
+		if m.barOn {
+			var cmd tea.Cmd
+			m.bar, cmd = m.bar.Update(msg)
+			m.barChanged()
+			return m, cmd
+		}
 		return m.updateInput(msg)
 	case tea.MouseWheelMsg:
 		return m.mouseWheel(msg)
@@ -239,6 +305,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.mouseClick(msg)
 	case tea.KeyPressMsg:
 		return m.key(msg)
+	}
+	if m.barOn {
+		var cmd tea.Cmd
+		m.bar, cmd = m.bar.Update(msg)
+		return m, cmd
 	}
 	if len(m.inputs) > 0 {
 		return m.updateInput(msg)
@@ -260,9 +331,13 @@ func firstLine(s string) string {
 }
 
 // setSnapshot replaces the snapshot, logs the changes and keeps the selection on the same row.
-func (m *Model) setSnapshot(s *snapshot.Snapshot) {
+// An agent that turned waiting gets a pulse and a toast.
+func (m *Model) setSnapshot(s *snapshot.Snapshot) tea.Cmd {
+	var cmd tea.Cmd
 	if m.snap != nil || s != nil {
-		m.events = append(m.events, snapshot.Diff(m.snap, s)...)
+		evs := snapshot.Diff(m.snap, s)
+		cmd = m.noticeWaiting(evs, m.snap == nil)
+		m.events = append(m.events, evs...)
 		if len(m.events) > maxEvents {
 			m.events = m.events[len(m.events)-maxEvents:]
 		}
@@ -286,6 +361,7 @@ func (m *Model) setSnapshot(s *snapshot.Snapshot) {
 		}
 	}
 	m.clamp()
+	return cmd
 }
 
 // buildRows flattens the snapshot into list rows: each session, then its agent panes.
@@ -369,14 +445,21 @@ func (m Model) selectedPaneID() string {
 	return ""
 }
 
-func (m Model) narrow() bool { return m.width < 60 }
+func (m Model) narrow() bool { return m.width < narrowWidth }
 
 // ── keys ─────────────────────────────────────────────────────────────────────
+
+// shortcuts are the single keys that act in the list; any other printable key starts a filter
+// in the command bar.
+const shortcuts = "jkGanrxspglRy?tq"
 
 func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 	if k == "ctrl+c" {
 		return m, tea.Quit
+	}
+	if m.barOn {
+		return m.barKey(msg)
 	}
 	switch m.mode {
 	case modeHelp:
@@ -384,9 +467,11 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "j", "down":
 			m.helpOffset++
 		case "k", "up":
-			if m.helpOffset > 0 {
-				m.helpOffset--
-			}
+			m.helpOffset = max(0, m.helpOffset-1)
+		case "pgdown":
+			m.helpOffset += m.height / 2
+		case "pgup":
+			m.helpOffset = max(0, m.helpOffset-m.height/2)
 		default:
 			m.mode = modeList
 		}
@@ -404,15 +489,13 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case "q", "esc", "l":
 			m.mode = modeList
 		}
-		if m.logOffset < 0 {
-			m.logOffset = 0
-		}
+		m.logOffset = max(0, m.logOffset)
 		return m, nil
 	case modeKill:
 		switch k {
 		case "y", "Y":
 			return m.doKill()
-		case "left", "right", "tab", "h":
+		case "left", "right", "tab", "shift+tab", "h", "l":
 			m.killYes = !m.killYes
 		case "enter":
 			if m.killYes {
@@ -423,7 +506,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeList
 		}
 		return m, nil
-	case modeNew, modeRename, modeSend, modeFilter:
+	case modeNew, modeRename, modeSend:
 		return m.formKey(msg)
 	case modeDetail:
 		switch k {
@@ -432,6 +515,9 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "enter":
 			return m.attach()
+		case "up", "k", "down", "j", "pgup", "pgdown":
+			m.scrollPreview(k)
+			return m, nil
 		}
 	}
 
@@ -443,23 +529,35 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "esc":
-		if m.filter != "" {
+		switch {
+		case m.filter != "":
 			m.filter = ""
 			m.buildRows()
 			m.clamp()
+		case m.focusDetail:
+			m.focusDetail = false
 		}
 		return m, nil
-	case "up", "k":
-		m.move(-1)
-		return m, m.previewCmd()
-	case "down", "j":
-		m.move(1)
-		return m, m.previewCmd()
-	case "pgup":
-		m.move(-max(1, m.listRows-1))
-		return m, m.previewCmd()
-	case "pgdown":
-		m.move(max(1, m.listRows-1))
+	case "tab", "shift+tab":
+		if m.mode == modeList && m.lay.detail.w > 0 {
+			m.focusDetail = !m.focusDetail
+		}
+		return m, nil
+	case "up", "k", "down", "j", "pgup", "pgdown":
+		if m.focusDetail && m.lay.detail.w > 0 {
+			m.scrollPreview(k)
+			return m, nil
+		}
+		switch k {
+		case "up", "k":
+			m.move(-1)
+		case "down", "j":
+			m.move(1)
+		case "pgup":
+			m.move(-max(1, m.listRows-1))
+		case "pgdown":
+			m.move(max(1, m.listRows-1))
+		}
 		return m, m.previewCmd()
 	case "home":
 		m.move(-len(m.rows))
@@ -470,7 +568,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if m.narrow() && m.mode == modeList {
 			if len(m.rows) > 0 {
-				m.mode = modeDetail
+				m.mode, m.previewOff = modeDetail, 0
 			}
 			return m, m.previewCmd()
 		}
@@ -491,10 +589,11 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "p":
 		m.preview = !m.preview
 		return m, m.previewCmd()
-	case "/":
-		in := m.newInput("filter: ", m.filter)
-		m.inputs, m.focus, m.mode = []textinput.Model{in}, 0, modeFilter
-		return m, m.inputs[0].Focus()
+	case "/", ":":
+		if m.mode == modeList {
+			return m.openBar("/")
+		}
+		return m, nil
 	case "g":
 		m.agentsOnly = !m.agentsOnly
 		m.buildRows()
@@ -504,29 +603,75 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.mode, m.logOffset = modeLog, 0
 		return m, nil
 	case "R":
-		if !m.refreshing {
-			m.refreshing = true
-			return m, m.refreshCmd()
-		}
-		return m, nil
+		return m, m.startRefresh()
 	case "?":
 		m.mode, m.helpOffset = modeHelp, 0
 		return m, nil
+	case "t":
+		return m, m.setTheme(m.nextTheme())
 	case "y":
 		_, p := m.selected()
 		if p != nil && p.Agent != nil && p.Agent.SessionID != "" {
-			m.status, m.statusErr = "copied session id (OSC 52)", false
-			return m, tea.SetClipboard(p.Agent.SessionID)
+			return m, tea.Batch(m.showToast("copied session id", toastInfo), tea.SetClipboard(p.Agent.SessionID))
 		}
-		m.status, m.statusErr = "no session id to copy", true
-		return m, nil
+		return m, m.showToast("no session id to copy", toastError)
+	}
+	// Any other printable key starts typing a filter.
+	if m.mode == modeList && msg.Text != "" && msg.Text != " " && !strings.ContainsAny(msg.Text, shortcuts) &&
+		msg.Mod&(tea.ModCtrl|tea.ModAlt) == 0 {
+		return m.openBar(msg.Text)
 	}
 	return m, nil
+}
+
+// scrollPreview moves the live preview: up shows older lines.
+func (m *Model) scrollPreview(k string) {
+	switch k {
+	case "up", "k":
+		m.previewOff++
+	case "down", "j":
+		m.previewOff--
+	case "pgup":
+		m.previewOff += max(1, m.height/3)
+	case "pgdown":
+		m.previewOff -= max(1, m.height/3)
+	}
+	lines := strings.Count(strings.TrimRight(m.previewText, "\n "), "\n") + 1
+	m.previewOff = max(0, min(m.previewOff, lines-1))
 }
 
 func (m *Model) move(d int) {
 	m.cursor += d
 	m.clamp()
+	m.previewOff = 0
+}
+
+// nextTheme is the theme after the current one: coral → teal → violet → coral.
+func (m Model) nextTheme() string {
+	names := config.Themes()
+	for i, n := range names {
+		if n == m.theme.Name {
+			return names[(i+1)%len(names)]
+		}
+	}
+	return names[0]
+}
+
+// setTheme applies a theme at once, shows a toast and saves it in the background. A failed save
+// keeps the theme for this run.
+func (m *Model) setTheme(name string) tea.Cmd {
+	m.theme.Name = name
+	m.theme = m.theme.Compile()
+	return tea.Batch(m.showToast("theme: "+name, toastInfo), m.saveThemeCmd(name))
+}
+
+// saveThemeCmd saves the theme off the update loop; nil when there is nowhere to save it.
+func (m Model) saveThemeCmd(name string) tea.Cmd {
+	save := m.opts.SaveTheme
+	if save == nil {
+		return nil
+	}
+	return func() tea.Msg { return themeSavedMsg{name, save(name)} }
 }
 
 func (m Model) attach() (tea.Model, tea.Cmd) {
@@ -534,8 +679,12 @@ func (m Model) attach() (tea.Model, tea.Cmd) {
 	if s == nil {
 		return m, nil
 	}
-	c, name := m.opts.Collector, s.Name
-	return m, func() tea.Msg {
+	return m, m.attachCmd(s.Name)
+}
+
+func (m Model) attachCmd(name string) tea.Cmd {
+	c := m.opts.Collector
+	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		cmd, inPlace := c.AttachCommand(ctx, name)
@@ -548,6 +697,13 @@ func (m Model) doKill() (tea.Model, tea.Cmd) {
 	m.mode = modeList
 	c := m.opts.Collector
 	return m, m.actionCmd("killed "+name, func(ctx context.Context) error { return c.KillSession(ctx, name) })
+}
+
+func (m Model) renameCmd(oldName, newName string) tea.Cmd {
+	c := m.opts.Collector
+	return m.actionCmd("renamed "+oldName+" → "+newName, func(ctx context.Context) error {
+		return c.RenameSession(ctx, oldName, newName)
+	})
 }
 
 // ── mouse ────────────────────────────────────────────────────────────────────
@@ -570,6 +726,15 @@ func (m Model) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case modeList, modeDetail:
+		mo := msg.Mouse()
+		if m.lay.detail.has(mo.X, mo.Y) {
+			if up {
+				m.scrollPreview("up")
+			} else {
+				m.scrollPreview("down")
+			}
+			return m, nil
+		}
 		if up {
 			m.move(-1)
 		} else {
@@ -580,22 +745,31 @@ func (m Model) mouseWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// mouseClick focuses the panel it lands in; on a row it selects, and on the selected row it
+// opens, as Enter does.
 func (m Model) mouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
-	if msg.Button != tea.MouseLeft || m.mode != modeList {
+	if msg.Button != tea.MouseLeft || m.mode != modeList || m.barOn {
 		return m, nil
 	}
 	mo := msg.Mouse()
-	if mo.Y < m.listTop || mo.Y >= m.listTop+m.listRows || mo.X < m.listLeft || mo.X >= m.listLeft+m.listWidth {
+	if m.lay.detail.has(mo.X, mo.Y) {
+		m.focusDetail = true
 		return m, nil
 	}
-	i := m.offset + mo.Y - m.listTop
-	if i < 0 || i >= len(m.rows) {
+	sr := m.lay.sessions
+	if !sr.has(mo.X, mo.Y) {
 		return m, nil
 	}
-	if i == m.cursor { // a click on the selected row opens it
+	m.focusDetail = false
+	i := m.offset + mo.Y - (sr.y + 1)
+	if mo.Y <= sr.y || mo.Y >= sr.y+sr.h-1 || i < 0 || i >= len(m.rows) {
+		return m, nil
+	}
+	if i == m.cursor {
 		return m.key(tea.KeyPressMsg{Code: tea.KeyEnter})
 	}
 	m.cursor = i
+	m.previewOff = 0
 	return m, m.previewCmd()
 }
 
@@ -620,19 +794,22 @@ func (m Model) Resize(w, h int) Model {
 
 func (m Model) newInput(prompt, value string) textinput.Model {
 	in := textinput.New()
-	// Plain input styles: no colour is needed, and none is used when colour is off.
+	// Plain input styles from the palette. The cursor does not blink, so a focused input does
+	// not keep a timer running.
 	st := in.Styles()
 	plain := textinput.StyleState{Placeholder: lipgloss.NewStyle().Faint(true)}
 	st.Focused, st.Blurred = plain, plain
+	st.Cursor.Blink = false
 	in.SetStyles(st)
 	in.Prompt = prompt
 	in.SetValue(value)
 	in.CursorEnd()
-	in.SetWidth(max(8, m.width-len(prompt)-4))
+	in.SetWidth(max(8, m.modalWidth()-4-7-len(prompt)-1))
 	return in
 }
 
-func (m Model) openNew() (tea.Model, tea.Cmd) {
+// defaultDir is the selection's path, else the home directory.
+func (m Model) defaultDir() string {
 	dir := m.opts.Home
 	if s, p := m.selected(); p != nil && p.Agent != nil && p.Agent.Path != "" {
 		dir = p.Agent.Path
@@ -641,8 +818,17 @@ func (m Model) openNew() (tea.Model, tea.Cmd) {
 			dir = ap.Path
 		}
 	}
-	m.inputs = []textinput.Model{m.newInput("name:  ", ""), m.newInput("dir:   ", dir), m.newInput("agent: ", "")}
-	m.inputs[2].Placeholder = "none, or " + strings.Join(m.agentIDs(), " ")
+	return dir
+}
+
+func (m Model) openNew() (tea.Model, tea.Cmd) {
+	m.inputs = []textinput.Model{m.newInput("", ""), m.newInput("", m.defaultDir())}
+	m.agentChoices, m.agentPick = []string{"shell"}, 0
+	for _, d := range m.opts.Collector.Table() {
+		if _, err := lookAgent(d, m.opts.LookPath); err == nil {
+			m.agentChoices = append(m.agentChoices, d.ID)
+		}
+	}
 	m.focus, m.mode = 0, modeNew
 	return m, m.inputs[0].Focus()
 }
@@ -660,7 +846,7 @@ func (m Model) openRename() (tea.Model, tea.Cmd) {
 	if s == nil {
 		return m, nil
 	}
-	m.inputs, m.focus, m.mode, m.formTarget = []textinput.Model{m.newInput("new name: ", s.Name)}, 0, modeRename, s.Name
+	m.inputs, m.focus, m.mode, m.formTarget = []textinput.Model{m.newInput("", s.Name)}, 0, modeRename, s.Name
 	return m, m.inputs[0].Focus()
 }
 
@@ -669,57 +855,72 @@ func (m Model) openSend() (tea.Model, tea.Cmd) {
 	if pane == "" {
 		return m, nil
 	}
-	m.inputs, m.focus, m.mode, m.formTarget = []textinput.Model{m.newInput("send: ", "")}, 0, modeSend, pane
+	m.inputs, m.focus, m.mode, m.formTarget = []textinput.Model{m.newInput("", "")}, 0, modeSend, pane
 	return m, m.inputs[0].Focus()
 }
 
+// fields is the number of focusable fields in the form: the text inputs, plus new's picker.
+func (m Model) fields() int {
+	if m.mode == modeNew {
+		return len(m.inputs) + 1
+	}
+	return len(m.inputs)
+}
+
+// setFocus moves the form's focus to field i.
+func (m *Model) setFocus(i int) tea.Cmd {
+	if m.focus < len(m.inputs) {
+		m.inputs[m.focus].Blur()
+	}
+	m.focus = i
+	if i < len(m.inputs) {
+		return m.inputs[i].Focus()
+	}
+	return nil
+}
+
 func (m Model) formKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
+	k := msg.String()
+	switch k {
 	case "esc":
-		if m.mode == modeFilter {
-			m.filter = ""
-			m.buildRows()
-			m.clamp()
-		}
 		m.closeForm()
 		return m, nil
 	case "tab", "down", "shift+tab", "up":
-		if m.mode == modeSend && (msg.String() == "tab" || msg.String() == "shift+tab") {
+		if m.mode == modeSend && (k == "tab" || k == "shift+tab") {
 			m.sendEnter = !m.sendEnter
 			return m, nil
 		}
-		if len(m.inputs) > 1 {
-			m.inputs[m.focus].Blur()
-			if msg.String() == "up" || msg.String() == "shift+tab" {
-				m.focus = (m.focus + len(m.inputs) - 1) % len(m.inputs)
-			} else {
-				m.focus = (m.focus + 1) % len(m.inputs)
+		if n := m.fields(); n > 1 {
+			if k == "up" || k == "shift+tab" {
+				return m, m.setFocus((m.focus + n - 1) % n)
 			}
-			return m, m.inputs[m.focus].Focus()
+			return m, m.setFocus((m.focus + 1) % n)
 		}
 		return m, nil
 	case "enter":
-		if m.mode == modeNew && m.focus < len(m.inputs)-1 {
-			m.inputs[m.focus].Blur()
-			m.focus++
-			return m, m.inputs[m.focus].Focus()
+		if m.mode == modeNew && m.focus < m.fields()-1 {
+			return m, m.setFocus(m.focus + 1)
 		}
 		return m.submit()
+	}
+	if m.mode == modeNew && m.focus == len(m.inputs) {
+		switch k {
+		case "left", "h":
+			m.agentPick = (m.agentPick + len(m.agentChoices) - 1) % len(m.agentChoices)
+		case "right", "l", "space":
+			m.agentPick = (m.agentPick + 1) % len(m.agentChoices)
+		}
+		return m, nil
 	}
 	return m.updateInput(msg)
 }
 
 func (m Model) updateInput(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if len(m.inputs) == 0 {
+	if m.focus >= len(m.inputs) {
 		return m, nil
 	}
 	var cmd tea.Cmd
 	m.inputs[m.focus], cmd = m.inputs[m.focus].Update(msg)
-	if m.mode == modeFilter {
-		m.filter = m.inputs[0].Value()
-		m.buildRows()
-		m.clamp()
-	}
 	return m, cmd
 }
 
@@ -727,21 +928,42 @@ func (m *Model) closeForm() {
 	m.inputs, m.focus, m.mode = nil, 0, modeList
 }
 
+// createCmd checks a new session's fields and returns the command that creates it.
+func (m Model) createCmd(name, dir, agent string) (tea.Cmd, error) {
+	c := m.opts.Collector
+	if name == "" {
+		return nil, errors.New("a session needs a name")
+	}
+	var cmd []string
+	if agent != "" && agent != "none" && agent != "shell" {
+		d, ok := agents.Lookup(c.Table(), agent)
+		if !ok {
+			return nil, fmt.Errorf("unknown agent %s; one of: %s", agent, strings.Join(m.agentIDs(), " "))
+		}
+		path, err := lookAgent(d, m.opts.LookPath)
+		if err != nil {
+			return nil, err
+		}
+		cmd = AgentCommand(path)
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		got, err := c.NewSession(ctx, name, dir, cmd)
+		return actionMsg{"created " + got, err}
+	}, nil
+}
+
 func (m Model) submit() (tea.Model, tea.Cmd) {
 	c := m.opts.Collector
 	switch m.mode {
-	case modeFilter:
-		m.closeForm()
-		return m, m.previewCmd()
 	case modeRename:
 		oldName, newName := m.formTarget, strings.TrimSpace(m.inputs[0].Value())
 		m.closeForm()
 		if newName == "" || newName == oldName {
 			return m, nil
 		}
-		return m, m.actionCmd("renamed "+oldName+" → "+newName, func(ctx context.Context) error {
-			return c.RenameSession(ctx, oldName, newName)
-		})
+		return m, m.renameCmd(oldName, newName)
 	case modeSend:
 		pane, text, enter := m.formTarget, m.inputs[0].Value(), m.sendEnter
 		m.closeForm()
@@ -752,32 +974,17 @@ func (m Model) submit() (tea.Model, tea.Cmd) {
 	case modeNew:
 		name := strings.TrimSpace(m.inputs[0].Value())
 		dir := strings.TrimSpace(m.inputs[1].Value())
-		agent := strings.TrimSpace(m.inputs[2].Value())
-		if name == "" {
-			m.status, m.statusErr = "a session needs a name", true
+		agent := ""
+		if m.agentPick < len(m.agentChoices) {
+			agent = m.agentChoices[m.agentPick]
+		}
+		cmd, err := m.createCmd(name, dir, agent)
+		if err != nil {
+			m.status, m.statusErr = err.Error(), true
 			return m, nil
 		}
-		var cmd []string
-		if agent != "" && agent != "none" {
-			d, ok := agents.Lookup(c.Table(), agent)
-			if !ok {
-				m.status, m.statusErr = "unknown agent "+agent+"; one of: "+strings.Join(m.agentIDs(), " "), true
-				return m, nil
-			}
-			path, err := lookAgent(d, m.opts.LookPath)
-			if err != nil {
-				m.status, m.statusErr = err.Error(), true
-				return m, nil
-			}
-			cmd = AgentCommand(path)
-		}
 		m.closeForm()
-		return m, func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			got, err := c.NewSession(ctx, name, dir, cmd)
-			return actionMsg{"created " + got, err}
-		}
+		return m, cmd
 	}
 	m.closeForm()
 	return m, nil

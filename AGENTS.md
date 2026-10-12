@@ -14,7 +14,8 @@ path. It offers a TUI and a CLI. Usage is in [README.md](README.md).
 | `internal/tmux`         | **The only package that runs tmux.** `Runner{Socket, Path}` maps to `-L`/`-S`, always passes `-u`, and calls `exec.Command("tmux", args…)`, never a shell. Holds the two `-F` formats and their parsers, and the actions. Actions target `=name` or `%pane`. There is no kill-server path. |
 | `internal/agents`       | **The only package that reads agent state files.** `Table()` holds the detector table, one entry per agent. Also the matcher, the process table (`ps` plus `/proc`), Claude's registry and transcript titles, and the per-agent state readers and screen patterns. |
 | `internal/snapshot`     | The one model. `Collector.Collect` returns `Snapshot{Taken, Server, Sessions[Windows[Panes[Agent]]]}`. It also does exited tracking (60 s), `Diff` (log events), `Resolve` (TARGET), and pass-through actions. The TUI and the CLI reach tmux only through this package. |
-| `internal/tui`          | Bubble Tea model (`model.go`), layout and drawing (`view.go`). `theme.go` holds the **one badge renderer**, plus truncation, age and path helpers that the CLI uses as well. |
+| `internal/tui`          | Bubble Tea model (`model.go`), layout, panels and drawing (`view.go`), the command bar (`cmdbar.go`), modals (`modal.go`), spinner, pulse and toasts (`motion.go`), the logo (`logo.go`). `theme.go` holds the **one badge renderer**, plus truncation, age and path helpers that the CLI uses as well. `palette.go` is **the only file with hex colours**; `styles.go` compiles them into styles once per theme change. |
+| `internal/config`       | Reads and writes `$XDG_CONFIG_HOME/perch/config.json` (else `~/.config/perch/config.json`): `{"theme": …}`. Keeps unknown keys; writes atomically (temp file, rename). `ResolveTheme` is the flag → `PERCH_THEME` → file → coral order. |
 | `internal/cli`          | Cobra commands (`cli.go`) and the **one table renderer** (`table.go`). |
 | `internal/version`      | `Version`, `Commit`, `Date`, set by `-ldflags -X`. These are the only package-level mutable variables. |
 | `scripts/release.sh`    | Cross-compiles five targets into `dist/*.tar.gz` and `dist/checksums.txt`. |
@@ -81,6 +82,7 @@ Smaller decisions made while building:
     the sessions are in SQLite.
 - **`s` (send) in the TUI.** `tab` toggles "and press Enter" (default on), and `enter` sends. The
   prompt says "Enter toggling", but Enter must also submit the line, so the toggle is on Tab.
+  `/send <text>` always presses Enter.
 - **Source keys.** Values come from the prompt's list (`registry`, `argv`, `state-dir`, `screen`,
   `pane-title`, `activity`), plus:
   - `proc-cwd` and `pane-path` for the path;
@@ -106,6 +108,90 @@ Smaller decisions made while building:
 - **AGE in `agents`** is the agent process's uptime. The TUI list shows the age of the pane's
   last activity.
 - **Exit code for an ambiguous TARGET** is 2 (bad usage). Not found is 3.
+
+## TUI design system (prompt 28)
+
+The TUI looks and moves like Claude Code's CLI: rounded panels, one accent colour, bold titles,
+normal values, dim labels, small motion, and an input bar that drives everything. The data,
+refresh, actions and every CLI output are unchanged.
+
+**Palette roles** (`palette.go`, one `Palette` per theme and variant): Accent (focused borders and
+titles, the selection bar, the logo), AccentSoft (the gradient's end), Text, Muted (labels, ages,
+hints), Faint (unfocused borders), Surface (modal and selected-row background), Working, Waiting,
+Idle, Exited, Danger, Success, and one colour per agent. Status and agent colours are shared by
+the three themes, so a status reads the same in each.
+
+| Theme | Variant | Accent | AccentSoft | Text | Muted | Faint | Surface |
+| ----- | ------- | ------ | ---------- | ---- | ----- | ----- | ------- |
+| coral (default) | dark | `#D97757` | `#F4B183` | `#E8E4DF` | `#9C958E` | `#736C66` | `#2D2A27` |
+| coral | light | `#C15F3C` | `#C9772E` | `#2B2622` | `#6B635C` | `#8E8780` | `#F3EFEA` |
+| teal | dark | `#2EC4B6` | `#7BDFF2` | `#E2E8F0` | `#94A3B8` | `#64748B` | `#243040` |
+| teal | light | `#0F8B8D` | `#2B6CB0` | `#1E293B` | `#526173` | `#7F8FA3` | `#EEF3F6` |
+| violet | dark | `#A78BFA` | `#F472B6` | `#E4E4E7` | `#A1A1AA` | `#71717A` | `#2A2633` |
+| violet | light | `#7C3AED` | `#DB2777` | `#18181B` | `#52525B` | `#8B8B94` | `#F4F0FF` |
+
+Shared, dark / light: working `#4EC27A` / `#1A7F37`, waiting `#E5B84B` / `#9A6700`, idle
+`#A39E99` / `#6E7781`, exited and danger `#FF7B72` / `#CF222E`; agents claude `#E0896A` /
+`#B85A3A`, codex `#6CB6FF` / `#0B66C3`, gemini `#A9A1FF` / `#6E56CF`, hermes `#F28FAD` /
+`#B4366A`, opencode `#56C8D8` / `#0B7A87`. The prompt's starting accents were kept; the greys
+and the gradient ends were chosen against `TestContrast`, which requires 4.5:1 for Text, Muted
+and Danger and 3:1 for Accent, Faint, AccentSoft, status and agent colours, against `#1E1E1E`
+(dark) and `#FFFFFF` (light), and the same on Surface for everything drawn on it. The first
+Faint picks (`#6E6862`-ish) were under 3:1 and were lightened.
+
+- The variant follows `BackgroundColorMsg`; until it arrives the TUI uses the dark one.
+- Colour goes through lipgloss and the terminal's colour profile, so 256- and 16-colour
+  terminals get the nearest colours (checked inside tmux at 256 colours). With colour off,
+  nothing but bold, faint and reverse is emitted, and status comes from the symbols.
+- Styles are compiled once per theme, background or colour change (`Theme.Compile`) into
+  escape-sequence pairs (`paint`). Nothing builds a lipgloss style per frame. `Render` of
+  35 panes at 140×40 takes about 1.2–1.35 ms (`BenchmarkRender`).
+- The CLI never compiles a theme (`Theme.Name` empty), so its tables keep the 16 ANSI colours.
+
+**Panels and focus.** Rounded borders (`╭╮╰╯`), or `+ - |` in ASCII mode. A title goes in the
+top edge and a position (`3/12`) in the bottom edge when a panel scrolls. Tab and Shift-Tab move
+focus between Sessions and Detail; the focused panel's border and title are Accent, the other's
+border is Faint and its title Muted (Faint text is only 3:1, too low for a label). A click
+focuses the panel it lands in. Arrows act on the focused panel; in Detail they scroll the
+live preview. Every rendered line fits the width (`TestEveryWidth`: 40–200 columns).
+
+**Motion.** A spinner (`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`, or `| / - \`) on working agents at 100 ms; a 3 s pulse
+(300 ms steps) between Waiting and the agent colour on a row that turns waiting, with a 4 s toast
+"◆ codex in api-server needs you" and, with `--bell`, one `\a`. The animation tick runs only
+while a working agent or a pulse exists; a toast has its own one-shot 4 s timer. The 2 s
+`tickCmd` is still the only refresh. `--no-anim` or `PERCH_NO_ANIM=1` stops the spinner and the
+pulse (toasts still show); no colour also means no animation. Text inputs do not blink, so an
+open input runs no timer. Measured with 8 agents on a private server: 2.9% CPU with a spinner
+visible, 1.4% for the same TUI with `--no-anim` (that is the 2 s refresh), 0.9% for a TUI with
+no agents.
+
+**Toasts** sit at the right end of the footer on narrow screens, and as a rounded mini-panel
+above the command bar from 100 columns with the full chrome. One at a time; newer replaces
+older.
+
+**The command bar replaces "/" as the filter key.** `/` or `:` opens it with a popup of
+commands (prefix matches, then subsequence matches; Tab completes, Up/Down choose, Enter runs).
+Any printable key that is not a shortcut (`jkGanrxspglRy?tq`) opens it as a live filter. A
+`/word` that names no command filters by `word`, so the old `/text` habit still works. `/kill`
+only ever opens the confirm modal. Errors stay in the bar and show under it, in Danger.
+
+**Modals** (new, rename, send, kill, help) are centred panels, min(60, w−4) wide, or w−2 under
+60 columns. The keys of each form are as before, except that new's agent is now a picker
+(←→) of "shell" and the agents found on PATH, instead of a text field.
+
+**Config file.** `internal/config`; see the layout table. A save failure shows as a toast and
+keeps the theme for the run.
+
+**Open decisions, as chosen:**
+
+- **Logo:** two candidates, block elements (A) and rounded box lines (B), are in
+  `docs/screenshots/logo-candidates.png`. A was kept: at 24 columns B reads as a box, not a
+  bird. ASCII mode uses a separate ASCII bird. The logo is dropped under 12 rows.
+- **Surface backgrounds** (modals, the selected row, the popup's selection) are drawn only once
+  `BackgroundColorMsg` has reported the background. Before that, and in terminals that never
+  answer (tmux without an attached client, for one), only borders and the `▌` bar mark them,
+  so a guessed background never clashes. The Surface fills a modal's inside, not its border
+  cells.
 
 ## Per-agent facts
 
@@ -165,10 +251,17 @@ What the tests cover:
 - Fixture state dirs for Codex, Hermes and Gemini, and argv for OpenCode.
 - Screen patterns for each agent.
 - Snapshot assembly, `Diff`, `Resolve` (including an ambiguous target) and exited tracking.
-- TUI golden renders at 40×12, 80×24 and 140×40, plus a narrow ASCII detail view, the kill
-  dialog and the new-session form, all by a direct `View`/`Render` call. Run
-  `go test ./internal/tui -update` to rewrite them.
-- Mouse handling, the filter and the forms.
+- TUI golden renders for each theme at 40×12, 80×24 and 140×40; `--ascii` and `--no-color` at
+  80×24; the empty state at 80×24 (logo) and 40×10 (none); the command popup and every modal at
+  80×24 and 40×12; toasts; a narrow ASCII detail view. The spinner frame and the clock are
+  pinned. All by a direct `Render` call; `go test ./internal/tui -update` rewrites them.
+- Every width from 40 to 200 in several modes, for line width.
+- Mouse handling, focus, typing to filter, the forms, the command bar (matching, parsing,
+  errors, `/kill` only confirming), theme cycling and saving, the waiting pulse and toast, that
+  no animation tick is scheduled with no working agent, and the palette contrast ratios.
+- `internal/config`: bad JSON, an unknown theme, unknown keys kept, atomic writes, the
+  resolution order.
+- `BenchmarkRender`: 35 panes at 140×40.
 - CLI tables, exit codes, and kill refusing to run without `--yes` off a terminal.
 - Integration tests on a private `-L perch-test-<random>` server: create, rename, send, capture,
   kill, and "no server running". They are skipped when tmux is not on PATH.
@@ -188,7 +281,30 @@ Manual checks done on 2026-10-12, all on private sockets:
   through the redirect, for a pinned `PERCH_VERSION`, and for a re-run (upgrade). It refused both
   a tampered checksum and a tampered archive.
 
+Manual checks for the panels and themes (prompt 28), 2026-10-12, on private servers only
+(`perch-test-<n>` with the sessions, and `perch-test-<n>-ui` running the TUIs so they did not
+list themselves):
+
+- Three fake agents (codex working via a tick loop, gemini and opencode idle), a plain shell
+  and `ünïcode-проект`. Each theme at 40×12, 80×24 and 140×40, captured with
+  `capture-pane -e`. freeze 0.2 rendered, but its built-in font lacks `⠋ ✦ ↻`, and embedding
+  DejaVu Sans Mono gave blank text, so the PNGs in `docs/screenshots/` come from a small
+  throwaway Go renderer (x/image, DejaVu Sans Mono with fallbacks, box lines drawn as lines).
+  It was not committed.
+- Tab focus; `t` wrote `config.json` (`XDG_CONFIG_HOME` pointed at a scratch dir) and a
+  restart came up in the saved theme. `/new`, typing to filter and Enter/Esc, `/send` (the text
+  arrived in the shell), `/kill` → No, `x` → Yes on a session made for it, `/theme pink`
+  showing its error under the bar.
+- A real `claude` in an untrusted `mktemp -d` folder: the row turned waiting, the toast
+  appeared and cleared after 4 s, and the row's colour alternated between waiting and Claude's
+  colour for 3 s. The trust dialog was not answered.
+
 Not verified:
+
+- The light variants on a real light terminal: tmux without a client does not report a
+  background, so only the contrast test covers them. For the same reason the Surface
+  background was seen only in the golden renders.
+- `--bell` on a real terminal (the test only checks that it is sent once).
 
 - The four uninstalled agents (Codex, Hermes, Gemini, OpenCode) were not checked on a live
   session. Their argv shapes, state layouts and screen strings come from source only.

@@ -1,12 +1,12 @@
-[1mperch[m 3 sess · 3 agents · ! waiting 1
-[1mClaude Code[m  * working
-Session  
-11111111-2222-4333-8444-555555555555
-Title    Fix flaky integration tests ...
-Path     ~/src/api
-PID      4242 · up 42m
-Target   api-server:0.0 %0
-Source   agent=argv status=registry
-         sessionId=registry title=state-
-         dir path=registry (high)
-esc back
+[1m* perch[m  [1m! 1[m  [2m* 1[m  [2mo 1[m                  
++- [2m*[m [1mClaude Code[m ----------------------+
+| [2mworking[m[2m - up 42m[m                     |
+| [2mSession  [m                            |
+| 11111111-2222-4333-8444-555555555555 |
+| [2mTitle    [mFix flaky integration te... |
+| [2mPath     [m~/src/api                   |
+| [2mPID      [m4242                        |
+| [2mTarget   [mapi-server:0.0 %0           |
++--------------------------------------+
+[2m> / commands - type to filter[m           
+[2mesc back[m                                

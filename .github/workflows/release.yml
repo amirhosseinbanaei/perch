@@ -1,0 +1,27 @@
+# Builds the release archives with scripts/release.sh when a v* tag is pushed, and publishes
+# them to a GitHub Release with the GitHub CLI and the workflow's GITHUB_TOKEN.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.2"
+      - name: Test
+        run: go test ./...
+      - name: Build archives
+        run: scripts/release.sh "${GITHUB_REF_NAME#v}"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes

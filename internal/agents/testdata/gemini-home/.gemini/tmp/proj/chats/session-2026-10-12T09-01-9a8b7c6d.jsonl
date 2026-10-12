@@ -1,0 +1,4 @@
+{"sessionId":"9a8b7c6d-1111-4222-8333-444455556666","projectHash":"abc","startTime":"2026-10-12T09:01:00.000Z","lastUpdated":"2026-10-12T09:05:00.000Z","kind":"main"}
+{"id":"m1","type":"user","content":"hello"}
+{"$set":{"summary":"Draft summary"}}
+{"$set":{"summary":"Refactor the parser"}}

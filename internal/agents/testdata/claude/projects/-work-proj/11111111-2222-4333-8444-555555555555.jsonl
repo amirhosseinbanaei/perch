@@ -1,0 +1,5 @@
+{"type":"user","message":{"role":"user","content":"fix the build"},"sessionId":"11111111-2222-4333-8444-555555555555"}
+{"type":"ai-title","aiTitle":"Old generated title","sessionId":"11111111-2222-4333-8444-555555555555"}
+{"type":"custom-title","customTitle":"Release prep","sessionId":"11111111-2222-4333-8444-555555555555"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"done, the \"custom-title\" type is not a title here"}]}}
+{"type":"ai-title","aiTitle":"Newer generated title","sessionId":"11111111-2222-4333-8444-555555555555"}

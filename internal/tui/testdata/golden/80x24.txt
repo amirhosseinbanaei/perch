@@ -1,0 +1,24 @@
+[1mtmux-manager[m 3 sessions · 3 agents · ◆ waiting 1
+ [1mapi-server[m 2w att
+[7m›  claude   ● working  Fix flaky integration tests in the payments module     5s[m
+   codex    ◆ waiting  host                                                   2m
+ [1mnotes[m 1w
+ [1münïcode 🙂 box[m 1w
+   gemini   ○ idle     Refactor the parser                                   20s
+── detail ──────────────────────────────────────────────────────────────────────
+[1mClaude Code[m  ● working
+Session  11111111-2222-4333-8444-555555555555
+Title    Fix flaky integration tests in the payments module
+Path     ~/src/api
+PID      4242 · up 42m
+Target   api-server:0.0 %0
+Source   agent=argv status=registry sessionId=registry title=state-dir
+         path=registry (high)
+── preview ─────────────────────────────────────────────────────────────────────
+$ claude
+╭───────────╮
+│ > hello   │
+╰───────────╯
+  ? for shortcuts
+
+? help

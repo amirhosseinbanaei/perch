@@ -1,0 +1,12 @@
+[1mtmm[m 3 sess · 3 agents · ◆ waiting 1
+ [1mapi-server[m 2w att
+[7m›  claude   ● working  Fix flaky int… 5s[m
+   codex    ◆ waiting  host           2m
+ [1mnotes[m 1w
+ [1münïcode 🙂 box[m 1w
+   gemini   ○ idle     Refactor the… 20s
+
+
+
+
+? help
